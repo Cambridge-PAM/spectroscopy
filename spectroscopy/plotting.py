@@ -114,13 +114,16 @@ def plot_perkin_data_overview(
     perkin_data: pd.DataFrame,
     *,
     rc_file: str | Path | None = "plotting_params.txt",
-    max_columns: int = 3,
+    max_columns: int | None = None,
     figsize: tuple[float, float] = (8, 4.5),
 ) -> tuple[Figure, Axes, list[str]]:
     """Plot a quick overview of PerkinElmer data using shared plotting defaults."""
-    selected_columns = list(
-        perkin_data.columns[: min(max_columns, len(perkin_data.columns))]
-    )
+    if max_columns is None:
+        selected_columns = list(perkin_data.columns)
+    else:
+        selected_columns = list(
+            perkin_data.columns[: min(max_columns, len(perkin_data.columns))]
+        )
 
     x_values: list[float] | list[int]
     x_label: str
@@ -131,12 +134,19 @@ def plot_perkin_data_overview(
         x_values = list(range(len(perkin_data.index)))
         x_label = "Index"
 
-    marker_positions: list[float] | list[int] = []
-    if len(x_values) >= 3:
-        marker_positions = [
-            x_values[len(x_values) // 3],
-            x_values[(2 * len(x_values)) // 3],
-        ]
+    source_y_label = str(perkin_data.attrs.get("y_column_label", "")).strip().upper()
+    source_y_labels = {
+        str(label).strip().upper()
+        for label in perkin_data.attrs.get("y_column_labels", [])
+    }
+    has_absorbance_column = (
+        source_y_label == "A"
+        or "A" in source_y_labels
+        or "A" in {str(col).strip().upper() for col in perkin_data.columns}
+    )
+    y_label = "Absorbance" if has_absorbance_column else "Signal / a.u."
+    y_limits = (0, 3) if has_absorbance_column else None
+    x_limits = (min(x_values), max(x_values)) if x_values else None
 
     with rc_file_context(rc_file):
         fig, ax = create_figure(figsize=figsize)
@@ -145,12 +155,12 @@ def plot_perkin_data_overview(
         plot_dataframe_columns(
             ax, perkin_data, columns=selected_columns, x_values=x_values
         )
-        if marker_positions:
-            add_vertical_markers(ax, marker_positions, color="black", linestyle="--")
         finalize_axis(
             ax,
             xlabel=x_label,
-            ylabel="Absorbance",
+            ylabel=y_label,
+            xlim=x_limits,
+            ylim=y_limits,
             legend=True,
         )
 

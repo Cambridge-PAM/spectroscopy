@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from scipy import interpolate
+
+
+def _to_float(value: Any) -> float:
+    return float(pd.to_numeric([value], errors="coerce")[0])
 
 
 def load_perkinelmer_results(
@@ -23,11 +28,21 @@ def load_perkinelmer_results(
         )
 
     data = pd.DataFrame()
+    y_column_labels: list[str] = []
+    last_index = None
     for sample in sample_names.index:
-        temp = pd.read_csv(sample_names.loc[sample, "File"], index_col=0)
+        sample_file = str(sample_names.loc[sample, "File"])
+        temp = pd.read_csv(sample_file, index_col=0)
+        y_column_labels.extend([str(col) for col in temp.columns])
         data[sample] = np.concatenate(temp.values).ravel()
+        last_index = temp.index
 
-    data.index = temp.index
+    if last_index is not None:
+        data.index = last_index
+    data = data.apply(pd.to_numeric, errors="coerce")
+    if y_column_labels:
+        data.attrs["y_column_labels"] = sorted(set(y_column_labels))
+        data.attrs["y_column_label"] = y_column_labels[0]
     return sample_names, data
 
 
@@ -51,8 +66,8 @@ def calibrate_reflectance(
 
     calibration = pd.DataFrame(index=["m", "c"])
     for wav in data.index:
-        dark_measured = data.loc[wav, dark_standard_column]
-        white_measured = data.loc[wav, white_standard_column]
+        dark_measured = _to_float(data.loc[wav, dark_standard_column])
+        white_measured = _to_float(data.loc[wav, white_standard_column])
         m = (white_func(wav) - dark_func(wav)) / (white_measured - dark_measured)
         c = white_func(wav) - (m * white_measured)
         calibration[wav] = [float(m), float(c)]
@@ -60,8 +75,8 @@ def calibrate_reflectance(
     calibrated = pd.DataFrame(index=data.index)
     for column in data.columns:
         calibrated[column] = [
-            calibration.loc["m", wav] * data.loc[wav, column]
-            + calibration.loc["c", wav]
+            _to_float(calibration.loc["m", wav]) * _to_float(data.loc[wav, column])
+            + _to_float(calibration.loc["c", wav])
             for wav in data.index
         ]
 

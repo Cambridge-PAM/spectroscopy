@@ -30,7 +30,6 @@ from .plotting import (
     plot_fluorolog_overview,
     plot_perkin_data_overview,
     plot_series,
-    rc_file_context,
     save_figure,
 )
 from .raman import (
@@ -42,6 +41,7 @@ from .raman import (
 )
 
 __all__ = [
+    "add_vertical_markers",
     "apply_luminous_efficacy",
     "build_grayscale_histograms",
     "calibrate_reflectance",
@@ -68,8 +68,6 @@ __all__ = [
     "plot_series",
     "preprocess_raman_mapping_line",
     "preprocess_raman_spectrum",
-    "rc_file_context",
     "read_raman_spectrum",
     "save_figure",
-    "add_vertical_markers",
 ]

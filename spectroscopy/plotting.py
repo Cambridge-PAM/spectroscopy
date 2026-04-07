@@ -13,8 +13,9 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.pyplot import rc_context
 
-# Suppress Helvetica font warnings from matplotlib
-warnings.filterwarnings("ignore", message=".*Helvetica.*")
+# Suppress all font-related warnings from matplotlib
+warnings.filterwarnings("ignore", category=UserWarning, module=".*matplotlib.*")
+warnings.filterwarnings("ignore", message=".*font.*")
 
 
 def rc_file_context(rc_file: str | Path | None = None):

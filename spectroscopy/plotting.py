@@ -168,6 +168,7 @@ def plot_perkin_data_overview(
             ylim=y_limits,
             legend=True,
         )
+        fig.tight_layout()
 
     return fig, ax, selected_columns
 
@@ -231,88 +232,86 @@ def plot_fluorolog_overview(
     # Generate color palette for unique samples
     color_palette = {}
     if unique_samples:
-        colors = plt.cm.tab10(range(min(len(unique_samples), 10)))
+        cmap = plt.get_cmap("tab10")
+        colors = cmap(range(min(len(unique_samples), 10)))
         if len(unique_samples) > 10:
             # Fall back to larger palette if more than 10 samples
-            colors = plt.cm.tab20(range(len(unique_samples)))
+            cmap = plt.get_cmap("tab20")
+            colors = cmap(range(len(unique_samples)))
         for i, sample in enumerate(sorted(unique_samples)):
             color_palette[sample] = colors[i]
 
-    with rc_file_context(rc_file):
-        fig, ax = create_figure(figsize=figsize)
-        if isinstance(ax, list):
-            ax = ax[0]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with rc_file_context(rc_file):
+            fig, ax = create_figure(figsize=figsize)
+            if isinstance(ax, list):
+                ax = ax[0]
 
-        # Primary axis: 'm' traces (ratio units), plus any unclassified traces.
-        primary_columns = m_columns + other_columns
-        if primary_columns:
-            for column in primary_columns:
-                series = fluorolog_data[column].dropna()
-                y_series = _normalize_series(series)
-                x_series = pd.to_numeric(series.index, errors="coerce")
-                valid = x_series.notna()
-                # Get color based on sample name (remove m/x suffix)
-                sample_name = str(column).rstrip("mxMX")
-                color = color_palette.get(sample_name, None)
-                ax.plot(
-                    x_series[valid],
-                    y_series[valid],
-                    label=column,
-                    linestyle="-",
-                    color=color,
-                )
+            # Primary axis: 'm' traces (ratio units), plus any unclassified traces.
+            primary_columns = m_columns + other_columns
+            if primary_columns:
+                for column in primary_columns:
+                    series = fluorolog_data[column].dropna()
+                    y_series = _normalize_series(series)
+                    x_series = pd.to_numeric(series.index.to_series(), errors="coerce")
+                    valid = x_series.notna()
+                    # Get color based on sample name (remove m/x suffix)
+                    sample_name = str(column).rstrip("mxMX")
+                    color = color_palette.get(sample_name, None)
+                    ax.plot(
+                        x_series[valid],
+                        y_series[valid],
+                        label=column,
+                        linestyle="-",
+                        color=color,
+                    )
 
-        secondary_axis = None
-        if x_columns:
-            secondary_axis = ax.twinx()
-            for column in x_columns:
-                series = fluorolog_data[column].dropna()
-                y_series = _normalize_series(series)
-                x_series = pd.to_numeric(series.index, errors="coerce")
-                valid = x_series.notna()
-                # Get color based on sample name (remove m/x suffix)
-                sample_name = str(column).rstrip("mxMX")
-                color = color_palette.get(sample_name, None)
-                secondary_axis.plot(
-                    x_series[valid],
-                    y_series[valid],
-                    label=column,
-                    linestyle="--",
-                    color=color,
-                )
-            secondary_axis.set_ylabel(
-                f"{y_name_x} (normalized)" if normalize else y_name_x
-            )
-            secondary_axis.set_ylim(*y_limits)
+            secondary_axis = None
+            if x_columns:
+                secondary_axis = ax.twinx()
+                for column in x_columns:
+                    series = fluorolog_data[column].dropna()
+                    y_series = _normalize_series(series)
+                    x_series = pd.to_numeric(series.index.to_series(), errors="coerce")
+                    valid = x_series.notna()
+                    # Get color based on sample name (remove m/x suffix)
+                    sample_name = str(column).rstrip("mxMX")
+                    color = color_palette.get(sample_name, None)
+                    secondary_axis.plot(
+                        x_series[valid],
+                        y_series[valid],
+                        label=column,
+                        linestyle="--",
+                        color=color,
+                    )
+                secondary_axis.set_ylabel(y_name_x)
+                secondary_axis.set_ylim(*y_limits)
 
-        finalize_axis(
-            ax,
-            xlabel=x_label,
-            ylabel=(
-                f"{(y_name_m if m_columns else y_label)} (normalized)"
-                if normalize
-                else (y_name_m if m_columns else y_label)
-            ),
-            xlim=x_limits,
-            ylim=y_limits,
-            legend=False,
-        )
-
-        handles, labels = ax.get_legend_handles_labels()
-        if secondary_axis is not None:
-            handles2, labels2 = secondary_axis.get_legend_handles_labels()
-            handles += handles2
-            labels += labels2
-        if handles:
-            ax.legend(
-                handles,
-                labels,
-                loc="upper center",
-                bbox_to_anchor=(0.5, 1.24),
-                ncol=2,
-                frameon=False,
+            finalize_axis(
+                ax,
+                xlabel=x_label,
+                ylabel=(y_name_m if m_columns else y_label),
+                xlim=x_limits,
+                ylim=y_limits,
+                legend=False,
             )
 
-        fig.tight_layout(rect=(0, 0, 1, 0.8))
+            handles, labels = ax.get_legend_handles_labels()
+            if secondary_axis is not None:
+                handles2, labels2 = secondary_axis.get_legend_handles_labels()
+                handles += handles2
+                labels += labels2
+            if handles:
+                ax.legend(
+                    handles,
+                    labels,
+                    loc="upper center",
+                    bbox_to_anchor=(0.5, -0.25),
+                    ncol=3,
+                    frameon=False,
+                )
+
+            fig.tight_layout(rect=(0, 0.2, 1, 1))
 
     return fig, ax, selected_columns

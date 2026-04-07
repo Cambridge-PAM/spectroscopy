@@ -165,3 +165,117 @@ def plot_perkin_data_overview(
         )
 
     return fig, ax, selected_columns
+
+
+def plot_fluorolog_overview(
+    fluorolog_data: pd.DataFrame,
+    *,
+    rc_file: str | Path | None = "plotting_params.txt",
+    max_columns: int | None = None,
+    figsize: tuple[float, float] = (8, 4.5),
+    normalize: bool = True,
+    ignore_files: Iterable[str] | None = None,
+) -> tuple[Figure, Axes, list[str]]:
+    """Plot all (or selected) Fluorolog traces from a folder import."""
+    ignored = {str(name).strip() for name in (ignore_files or [])}
+
+    if max_columns is None:
+        selected_columns = [col for col in fluorolog_data.columns if col not in ignored]
+    else:
+        available_columns = [
+            col for col in fluorolog_data.columns if col not in ignored
+        ]
+        selected_columns = list(
+            available_columns[: min(max_columns, len(available_columns))]
+        )
+
+    try:
+        x_values = fluorolog_data.index.astype(float).to_list()
+    except (TypeError, ValueError):
+        x_values = list(range(len(fluorolog_data.index)))
+
+    x_limits = (min(x_values), max(x_values)) if x_values else None
+    x_label = str(fluorolog_data.attrs.get("x_name", "Wavelength"))
+    y_label = str(fluorolog_data.attrs.get("y_label", "Signal / a.u."))
+    y_name_m = str(fluorolog_data.attrs.get("y_name_m", "Signal"))
+    y_name_x = str(fluorolog_data.attrs.get("y_name_x", "Signal"))
+    y_label_m = str(fluorolog_data.attrs.get("y_label_m", y_label))
+    y_label_x = str(fluorolog_data.attrs.get("y_label_x", y_label))
+
+    def _normalize_series(series: pd.Series) -> pd.Series:
+        if not normalize:
+            return series
+        max_value = series.max(skipna=True)
+        if pd.isna(max_value) or max_value == 0:
+            return series
+        return series / max_value
+
+    m_columns = [col for col in selected_columns if str(col).lower().endswith("m")]
+    x_columns = [col for col in selected_columns if str(col).lower().endswith("x")]
+    other_columns = [
+        col for col in selected_columns if col not in m_columns and col not in x_columns
+    ]
+    y_limits = (0, 1.1)
+
+    with rc_file_context(rc_file):
+        fig, ax = create_figure(figsize=figsize)
+        if isinstance(ax, list):
+            ax = ax[0]
+
+        # Primary axis: 'm' traces (ratio units), plus any unclassified traces.
+        primary_columns = m_columns + other_columns
+        if primary_columns:
+            for column in primary_columns:
+                series = fluorolog_data[column].dropna()
+                y_series = _normalize_series(series)
+                x_series = pd.to_numeric(series.index, errors="coerce")
+                valid = x_series.notna()
+                ax.plot(x_series[valid], y_series[valid], label=column, linestyle="-")
+
+        secondary_axis = None
+        if x_columns:
+            secondary_axis = ax.twinx()
+            for column in x_columns:
+                series = fluorolog_data[column].dropna()
+                y_series = _normalize_series(series)
+                x_series = pd.to_numeric(series.index, errors="coerce")
+                valid = x_series.notna()
+                secondary_axis.plot(
+                    x_series[valid], y_series[valid], label=column, linestyle="--"
+                )
+            secondary_axis.set_ylabel(
+                f"{y_name_x} (normalized)" if normalize else y_name_x
+            )
+            secondary_axis.set_ylim(*y_limits)
+
+        finalize_axis(
+            ax,
+            xlabel=x_label,
+            ylabel=(
+                f"{(y_name_m if m_columns else y_label)} (normalized)"
+                if normalize
+                else (y_name_m if m_columns else y_label)
+            ),
+            xlim=x_limits,
+            ylim=y_limits,
+            legend=False,
+        )
+
+        handles, labels = ax.get_legend_handles_labels()
+        if secondary_axis is not None:
+            handles2, labels2 = secondary_axis.get_legend_handles_labels()
+            handles += handles2
+            labels += labels2
+        if handles:
+            ax.legend(
+                handles,
+                labels,
+                loc="upper center",
+                bbox_to_anchor=(0.5, 1.24),
+                ncol=2,
+                frameon=False,
+            )
+
+        fig.tight_layout(rect=(0, 0, 1, 0.8))
+
+    return fig, ax, selected_columns

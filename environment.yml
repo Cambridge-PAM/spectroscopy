@@ -1,0 +1,15 @@
+name: spectroscopy
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.10
+  - numpy
+  - pandas
+  - matplotlib
+  - scipy
+  - pillow
+  - black
+  - pip
+  - pip:
+      - BaselineRemoval

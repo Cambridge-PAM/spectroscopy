@@ -1,18 +1,28 @@
 # Spectroscopy
-Code for spectroscopic data processing in the PAM group
+Code for spectroscopic data processing in the PAM group.
 
-1. **plotting_params.txt** Parameter file for graphs plotted
+This repository has been refactored from notebook-centric scripts into reusable Python modules.
 
-2. **LWEL-Fab-Camera.ipynb** Code to analyse image sequences during LWEL formation (histogram, fourier transforms)
+## Layout
 
-3. **PerkinElmer-Abs.ipynb** Code to analyse absorbance data from Perkin Elmer spectrometers
+1. **spectroscopy/** Reusable package with processing functions:
+	- `raman.py`
+	- `perkinelmer.py`
+	- `ftir.py`
+	- `power.py`
+	- `camera.py`
+2. **Spectroscopy-Examples.ipynb** Single notebook that demonstrates example usage of the module APIs.
+3. **archive/notebooks/** Archived legacy notebooks retained for reference.
+4. **plotting_params.txt** Matplotlib style parameters.
+5. **environment.yml** Conda environment definition for the package and notebook examples.
 
-4. **PerkinElmer-Ref.ipynb** Code to analyse reflectance data from Perkin Elmer spectrometers and calibrate using reflectance standards
+## Install
 
-5. **Power-to-Lux.ipynb** Code to convert power spectrum collected using an integrating sphere to illuminance and luminous flux
+```bash
+conda env create -f environment.yml
+conda activate spectroscopy
+```
 
-6. **ThermoFisher-FTIR-Spectrum.ipynb** Code to analyse FTIR data from ThermoFisher spectrometers
+## Usage
 
-7. **inViaRaman-Mapping.ipynb** Code to analyse Raman maps of samples with baseline correction, normalisation and noise filtering
-
-8. **inViaRaman-Spectrum.ipynb** Code to analyse Raman spectra with baseline correction, normalisation and noise filtering
+Open **Spectroscopy-Examples.ipynb** and update the example file paths to your local data.

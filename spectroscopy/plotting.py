@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Iterable
@@ -11,6 +12,9 @@ import pandas as pd
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.pyplot import rc_context
+
+# Suppress Helvetica font warnings from matplotlib
+warnings.filterwarnings("ignore", message=".*Helvetica.*")
 
 
 def rc_file_context(rc_file: str | Path | None = None):
@@ -217,6 +221,22 @@ def plot_fluorolog_overview(
     ]
     y_limits = (0, 1.1)
 
+    # Create sample name -> color mapping
+    unique_samples = set()
+    for col in selected_columns:
+        sample_name = str(col).rstrip("mxMX")  # Remove trailing m or x (any case)
+        unique_samples.add(sample_name)
+
+    # Generate color palette for unique samples
+    color_palette = {}
+    if unique_samples:
+        colors = plt.cm.tab10(range(min(len(unique_samples), 10)))
+        if len(unique_samples) > 10:
+            # Fall back to larger palette if more than 10 samples
+            colors = plt.cm.tab20(range(len(unique_samples)))
+        for i, sample in enumerate(sorted(unique_samples)):
+            color_palette[sample] = colors[i]
+
     with rc_file_context(rc_file):
         fig, ax = create_figure(figsize=figsize)
         if isinstance(ax, list):
@@ -230,7 +250,16 @@ def plot_fluorolog_overview(
                 y_series = _normalize_series(series)
                 x_series = pd.to_numeric(series.index, errors="coerce")
                 valid = x_series.notna()
-                ax.plot(x_series[valid], y_series[valid], label=column, linestyle="-")
+                # Get color based on sample name (remove m/x suffix)
+                sample_name = str(column).rstrip("mxMX")
+                color = color_palette.get(sample_name, None)
+                ax.plot(
+                    x_series[valid],
+                    y_series[valid],
+                    label=column,
+                    linestyle="-",
+                    color=color,
+                )
 
         secondary_axis = None
         if x_columns:
@@ -240,8 +269,15 @@ def plot_fluorolog_overview(
                 y_series = _normalize_series(series)
                 x_series = pd.to_numeric(series.index, errors="coerce")
                 valid = x_series.notna()
+                # Get color based on sample name (remove m/x suffix)
+                sample_name = str(column).rstrip("mxMX")
+                color = color_palette.get(sample_name, None)
                 secondary_axis.plot(
-                    x_series[valid], y_series[valid], label=column, linestyle="--"
+                    x_series[valid],
+                    y_series[valid],
+                    label=column,
+                    linestyle="--",
+                    color=color,
                 )
             secondary_axis.set_ylabel(
                 f"{y_name_x} (normalized)" if normalize else y_name_x

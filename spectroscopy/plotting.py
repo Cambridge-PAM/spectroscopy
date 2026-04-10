@@ -11,6 +11,8 @@ import pandas as pd
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
+from .fluorolog import fit_fluorolog_peaks
+
 # Suppress all font-related warnings from matplotlib
 warnings.filterwarnings("ignore", category=UserWarning, module=".*matplotlib.*")
 warnings.filterwarnings("ignore", message=".*font.*")
@@ -171,6 +173,10 @@ def plot_fluorolog_overview(
     figsize: tuple[float, float] = (8, 4.5),
     normalize: bool = True,
     ignore_files: Iterable[str] | None = None,
+    label_peaks: bool = True,
+    peak_prominence: float | None = None,
+    max_peaks_per_trace: int | None = None,
+    peak_fit_window_points: int = 9,
 ) -> tuple[Figure, Axes, list[str]]:
     """Plot all (or selected) Fluorolog traces from a folder import."""
     ignored = {str(name).strip() for name in (ignore_files or [])}
@@ -211,7 +217,7 @@ def plot_fluorolog_overview(
     other_columns = [
         col for col in selected_columns if col not in m_columns and col not in x_columns
     ]
-    y_limits = (0, 1.1)
+    y_limits = (0, 1.15) if normalize else None
 
     # Create sample name -> color mapping
     unique_samples = set()
@@ -300,6 +306,40 @@ def plot_fluorolog_overview(
                 ncol=3,
                 frameon=False,
             )
+
+        if label_peaks and selected_columns:
+            peak_table = fit_fluorolog_peaks(
+                fluorolog_data,
+                columns=selected_columns,
+                prominence=peak_prominence,
+                max_peaks_per_trace=max_peaks_per_trace,
+                fit_window_points=peak_fit_window_points,
+                normalize=normalize,
+            )
+            if not peak_table.empty:
+                for _, peak in peak_table.iterrows():
+                    column = str(peak["column"])
+                    x_pos = float(peak["peak_wavelength"])
+                    y_pos = float(peak["peak_height"])
+                    sample_name = column.rstrip("mxMX")
+                    color = color_palette.get(sample_name, "black")
+
+                    target_axis = (
+                        secondary_axis
+                        if secondary_axis is not None and column.lower().endswith("x")
+                        else ax
+                    )
+                    target_axis.plot(x_pos, y_pos, marker="o", ms=3.5, color=color)
+                    target_axis.annotate(
+                        f"{x_pos:.1f}",
+                        xy=(x_pos, y_pos),
+                        xytext=(0, 7),
+                        textcoords="offset points",
+                        ha="center",
+                        va="bottom",
+                        fontsize=8,
+                        color=color,
+                    )
 
         fig.tight_layout(rect=(0, 0.2, 1, 1))
 

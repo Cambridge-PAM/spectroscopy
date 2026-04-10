@@ -8,6 +8,7 @@ from .camera import (
 )
 from .ftir import find_peak_wavenumbers, load_ftir_spectra, normalize_and_filter_ftir
 from .fluorolog import (
+    fit_fluorolog_peaks,
     load_fluorolog_dat,
     load_fluorolog_folder,
 )
@@ -53,6 +54,7 @@ __all__ = [
     "fft_image_sequence",
     "find_nearest_wavenumber",
     "find_peak_wavenumbers",
+    "fit_fluorolog_peaks",
     "load_fluorolog_dat",
     "load_fluorolog_folder",
     "load_ftir_spectra",

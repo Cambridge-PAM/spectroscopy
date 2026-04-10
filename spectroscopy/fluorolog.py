@@ -5,7 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
+import numpy as np
 import pandas as pd
+from scipy.optimize import curve_fit
+from scipy.signal import find_peaks
 
 
 def _normalize_label(text: str) -> str:
@@ -212,3 +215,159 @@ def load_fluorolog_folder(
 
     file_table = pd.DataFrame(file_rows).set_index("sample")
     return file_table, fluorolog_data
+
+
+def _gaussian_with_offset(
+    x_values: np.ndarray,
+    amplitude: float,
+    center: float,
+    sigma: float,
+    offset: float,
+) -> np.ndarray:
+    return amplitude * np.exp(-0.5 * ((x_values - center) / sigma) ** 2) + offset
+
+
+def fit_fluorolog_peaks(
+    fluorolog_data: pd.DataFrame,
+    columns: list[str] | None = None,
+    *,
+    prominence: float | None = None,
+    max_peaks_per_trace: int | None = None,
+    fit_window_points: int = 9,
+    normalize: bool = True,
+) -> pd.DataFrame:
+    """Detect and fit fluorescence peaks for selected Fluorolog traces.
+
+    The function detects candidate peaks with ``scipy.signal.find_peaks`` and then
+    refines each candidate using a local Gaussian + constant-offset fit. Set
+    ``max_peaks_per_trace=None`` to fit all detected peaks in each trace.
+    """
+    if fit_window_points < 5:
+        raise ValueError("fit_window_points must be at least 5.")
+
+    half_window = fit_window_points // 2
+    selected_columns = list(columns) if columns is not None else list(fluorolog_data)
+    rows: list[dict[str, float | str | bool]] = []
+
+    for column in selected_columns:
+        if column not in fluorolog_data:
+            continue
+
+        series = fluorolog_data[column].dropna()
+        if series.empty:
+            continue
+
+        x_series = pd.to_numeric(series.index.to_series(), errors="coerce")
+        y_series = pd.to_numeric(series, errors="coerce")
+        valid = x_series.notna() & y_series.notna()
+        x_values = x_series[valid].to_numpy(dtype=float)
+        y_values = y_series[valid].to_numpy(dtype=float)
+
+        if len(x_values) < 5:
+            continue
+
+        if normalize:
+            max_value = np.nanmax(y_values)
+            if np.isfinite(max_value) and max_value != 0:
+                y_values = y_values / max_value
+
+        dynamic_prominence = (
+            prominence
+            if prominence is not None
+            else max(0.05 * float(np.nanmax(y_values) - np.nanmin(y_values)), 1e-8)
+        )
+        peak_indices, peak_props = find_peaks(y_values, prominence=dynamic_prominence)
+        if len(peak_indices) == 0:
+            continue
+
+        prominences = peak_props.get("prominences", np.zeros(len(peak_indices)))
+        order = np.argsort(prominences)[::-1]
+        if max_peaks_per_trace is None:
+            keep_count = len(order)
+        else:
+            keep_count = max(1, min(int(max_peaks_per_trace), len(order)))
+
+        for rank, order_index in enumerate(order[:keep_count], start=1):
+            peak_idx = int(peak_indices[order_index])
+            start = max(0, peak_idx - half_window)
+            end = min(len(x_values), peak_idx + half_window + 1)
+            if end - start < 5:
+                continue
+
+            x_fit = x_values[start:end]
+            y_fit = y_values[start:end]
+
+            initial_amplitude = float(
+                max(y_values[peak_idx] - np.nanmedian(y_fit), 1e-8)
+            )
+            initial_center = float(x_values[peak_idx])
+            x_span = float(max(x_fit) - min(x_fit))
+            initial_sigma = max(x_span / 6.0, 1e-6)
+            initial_offset = float(np.nanmedian(y_fit))
+
+            lower_bounds = [0.0, float(min(x_fit)), 1e-9, -np.inf]
+            upper_bounds = [
+                float(max(y_fit) * 2.0 + 1.0),
+                float(max(x_fit)),
+                max(x_span, 1e-6),
+                np.inf,
+            ]
+
+            try:
+                params, _ = curve_fit(
+                    _gaussian_with_offset,
+                    x_fit,
+                    y_fit,
+                    p0=[
+                        initial_amplitude,
+                        initial_center,
+                        initial_sigma,
+                        initial_offset,
+                    ],
+                    bounds=(lower_bounds, upper_bounds),
+                    maxfev=5000,
+                )
+                amplitude, center, sigma, offset = [float(p) for p in params]
+                success = True
+            except Exception:
+                amplitude = float(y_values[peak_idx] - np.nanmin(y_fit))
+                center = float(x_values[peak_idx])
+                sigma = np.nan
+                offset = float(np.nanmin(y_fit))
+                success = False
+
+            fitted_height = amplitude + offset
+            fwhm = float(2.354820045 * sigma) if np.isfinite(sigma) else np.nan
+
+            rows.append(
+                {
+                    "column": str(column),
+                    "peak_rank": rank,
+                    "peak_wavelength": float(center),
+                    "peak_height": float(fitted_height),
+                    "amplitude": float(amplitude),
+                    "offset": float(offset),
+                    "sigma": float(sigma) if np.isfinite(sigma) else np.nan,
+                    "fwhm": fwhm,
+                    "success": success,
+                }
+            )
+
+    if not rows:
+        return pd.DataFrame(
+            columns=[
+                "column",
+                "peak_rank",
+                "peak_wavelength",
+                "peak_height",
+                "amplitude",
+                "offset",
+                "sigma",
+                "fwhm",
+                "success",
+            ]
+        )
+
+    peaks = pd.DataFrame(rows)
+    peaks = peaks.sort_values(["column", "peak_rank"]).reset_index(drop=True)
+    return peaks

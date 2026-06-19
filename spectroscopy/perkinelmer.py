@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from scipy import interpolate
 
 
@@ -46,9 +49,61 @@ def load_perkinelmer_results(
     return sample_names, data
 
 
-def load_reflectance_reference(csv_path: str | Path) -> tuple[np.ndarray, np.ndarray]:
-    reference = pd.read_csv(csv_path, sep=";", skiprows=1, index_col=0, decimal=",")
-    return reference.index.values, reference.values.ravel()
+def _extract_reference_xy(reference: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    numeric = reference.apply(pd.to_numeric, errors="coerce")
+    valid_columns = [col for col in numeric.columns if numeric[col].notna().any()]
+
+    if len(valid_columns) >= 2:
+        x = numeric[valid_columns[0]].to_numpy(dtype=float)
+        y = numeric[valid_columns[1]].to_numpy(dtype=float)
+    elif len(valid_columns) == 1:
+        x = pd.to_numeric(pd.Series(reference.index), errors="coerce").to_numpy(
+            dtype=float
+        )
+        y = numeric[valid_columns[0]].to_numpy(dtype=float)
+    else:
+        raise ValueError("Reference file does not contain numeric data.")
+
+    mask = np.isfinite(x) & np.isfinite(y)
+    x = x[mask]
+    y = y[mask]
+
+    if x.size < 2:
+        raise ValueError("Reference file must contain at least two numeric points.")
+
+    order = np.argsort(x)
+    return x[order], y[order]
+
+
+def load_reflectance_reference(
+    reference_path: str | Path,
+) -> tuple[np.ndarray, np.ndarray]:
+    reference_path = Path(reference_path)
+    suffix = reference_path.suffix.lower()
+
+    if suffix == ".csv":
+        reference = pd.read_csv(
+            reference_path, sep=";", skiprows=1, index_col=0, decimal=","
+        )
+        x = pd.to_numeric(pd.Series(reference.index), errors="coerce").to_numpy(
+            dtype=float
+        )
+        y = pd.to_numeric(reference.iloc[:, 0], errors="coerce").to_numpy(dtype=float)
+        mask = np.isfinite(x) & np.isfinite(y)
+        x = x[mask]
+        y = y[mask]
+        if x.size < 2:
+            raise ValueError("Reference file must contain at least two numeric points.")
+        order = np.argsort(x)
+        return x[order], y[order]
+
+    if suffix in {".xlsx", ".xls", ".xlsm"}:
+        reference = pd.read_excel(reference_path)
+        return _extract_reference_xy(reference)
+
+    raise ValueError(
+        f"Unsupported reference file format '{suffix}'. Use .csv, .xlsx, .xls, or .xlsm."
+    )
 
 
 def calibrate_reflectance(
@@ -81,3 +136,56 @@ def calibrate_reflectance(
         ]
 
     return calibrated, calibration
+
+
+def export_and_plot_calibrated_reflectance(
+    calibrated: pd.DataFrame,
+    output_csv_path: str | Path,
+    *,
+    columns: list[str] | None = None,
+    figsize: tuple[float, float] = (8, 4.5),
+    ax: Axes | None = None,
+) -> tuple[Path, Figure, Axes]:
+    """Export calibrated reflectance data to CSV and plot calibrated %R traces."""
+    output_csv = Path(output_csv_path)
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+
+    export_df = calibrated.copy()
+    if export_df.index.name is None:
+        export_df.index.name = "Wavelength (nm)"
+    export_df.to_csv(output_csv)
+
+    selected_columns = columns if columns is not None else list(calibrated.columns)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = cast(Figure, ax.figure)
+
+    try:
+        x_values = pd.to_numeric(pd.Series(calibrated.index), errors="coerce").to_numpy(
+            dtype=float
+        )
+        x_mask = np.isfinite(x_values)
+        x_label = "Wavelength / nm"
+    except (TypeError, ValueError):
+        x_values = np.arange(len(calibrated.index), dtype=float)
+        x_mask = np.ones_like(x_values, dtype=bool)
+        x_label = "Index"
+
+    for column in selected_columns:
+        y_values = pd.to_numeric(calibrated[column], errors="coerce").to_numpy(
+            dtype=float
+        )
+        valid = x_mask & np.isfinite(y_values)
+        ax.plot(x_values[valid], y_values[valid], label=column)
+
+    ax.set_xlabel(x_label)
+    ax.set_ylabel("Reflectance / %R")
+    ax.set_title("Calibrated Reflectance")
+    handles, _ = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend()
+    fig.tight_layout()
+
+    return output_csv, fig, ax

@@ -14,6 +14,7 @@ from .fluorolog import (
 )
 from .perkinelmer import (
     calibrate_reflectance,
+    export_and_plot_calibrated_reflectance,
     load_perkinelmer_results,
     load_reflectance_reference,
 )
@@ -49,6 +50,7 @@ __all__ = [
     "compute_irradiance_and_lux",
     "create_figure",
     "discover_image_sequence",
+    "export_and_plot_calibrated_reflectance",
     "extract_mapping_line",
     "finalize_axis",
     "fft_image_sequence",
